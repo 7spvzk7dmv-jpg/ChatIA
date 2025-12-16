@@ -5,6 +5,7 @@
   <title>AI English Trainer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { darkMode: 'class' }
@@ -16,23 +17,36 @@
   <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
   <p id="levelText" class="text-sm text-gray-400 mb-3"></p>
 
-  <div id="englishText" class="bg-gray-800 p-3 rounded mb-2"></div>
+  <!-- Texto / correção -->
+  <div
+    id="englishText"
+    class="bg-gray-800 p-3 rounded mb-2 min-h-[64px]"
+  ></div>
+
+  <!-- Feedback curto -->
   <div id="feedback" class="text-sm mb-3"></div>
 
+  <!-- Controles -->
   <div class="flex gap-2 mb-3">
-    <button id="micBtn" class="px-3 py-2 bg-blue-600 rounded">🎤 Speak</button>
-    <button id="askBtn" class="px-3 py-2 bg-purple-600 rounded">🤖 Ask AI</button>
-    <button id="listenBtn" class="px-3 py-2 bg-green-600 rounded" disabled>
-      🔊 Listen
+    <button
+      id="micBtn"
+      class="px-3 py-2 bg-blue-600 rounded hover:bg-blue-500"
+    >
+      🎤 Speak
+    </button>
+
+    <button
+      id="askBtn"
+      class="px-3 py-2 bg-purple-600 rounded hover:bg-purple-500"
+    >
+      🤖 Ask IA
     </button>
   </div>
 
-  <div class="flex gap-2 mb-3">
-    <button id="strictBtn" class="px-3 py-2 bg-red-600 rounded">😈 Strict OFF</button>
-  </div>
+  <!-- Histórico -->
+  <div id="history" class="text-xs text-gray-400 mt-4"></div>
 
-  <div id="history" class="text-xs text-gray-400 mt-3"></div>
-
+  <!-- App -->
   <script src="app.js"></script>
 </body>
 </html>
