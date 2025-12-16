@@ -20,8 +20,6 @@
   <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
 </div>
 
-<svg id="chart" width="100%" height="80" class="bg-gray-800 rounded"></svg>
-
 <script>
 /* ================= CONFIG ================= */
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
@@ -29,8 +27,7 @@ const LEVELS = ["A1","A2","B1","B2","C1"];
 
 /* ================= STATE ================= */
 let state = JSON.parse(localStorage.getItem("state")) || {
-  level: "A1",
-  history: []
+  level: "A1"
 };
 
 let listening = false;
@@ -41,11 +38,9 @@ const feedback = document.getElementById("feedback");
 const levelText = document.getElementById("levelText");
 const speakBtn = document.getElementById("speakBtn");
 const resetBtn = document.getElementById("resetBtn");
-const chart = document.getElementById("chart");
 
 /* ================= INIT ================= */
 updateUI();
-drawChart();
 
 /* ================= STT (Safari) ================= */
 speakBtn.onclick = () => {
@@ -81,20 +76,18 @@ speakBtn.onclick = () => {
 };
 
 /* ================= IA FLOW ================= */
-async function askAI(text) {
+async function askAI(userText) {
   feedback.textContent = "🤖 AI responding…";
 
   const prompt = `
-You are a strict American English teacher.
-Correct grammar and pronunciation.
-Adapt difficulty to CEFR.
+You are a strict but helpful American English teacher.
+You must guide the student to speak better English.
+Always respond in natural American English.
+Correct grammar implicitly.
+Ask a follow-up question to keep the conversation going.
 
-Student level: ${state.level}
-User said: "${text}"
-
-Format:
-Reply:
-Level:
+Student CEFR level: ${state.level}
+Student said: "${userText}"
 `;
 
   try {
@@ -104,12 +97,10 @@ Level:
       body: JSON.stringify({ prompt })
     });
 
-    if (!res.ok) throw new Error();
-
     const rawText = await res.text();
     let output = rawText;
 
-    /* 🔑 Tratamento robusto: JSON ou texto */
+    // tenta JSON, mas não exige
     try {
       const parsed = JSON.parse(rawText);
       if (Array.isArray(parsed) && parsed[0]?.generated_text) {
@@ -117,21 +108,25 @@ Level:
       } else if (parsed.generated_text) {
         output = parsed.generated_text;
       }
-    } catch {
-      /* resposta já é texto */
-    }
+    } catch {}
 
-    const reply = extract(output, "Reply");
-    const newLevel = extract(output, "Level") || state.level;
+    // 🔑 PARSER ROBUSTO
+    let reply = extract(output, "Reply");
+    let newLevel = extract(output, "Level");
+
+    // fallback absoluto
+    if (!reply) reply = output.trim();
+    if (!newLevel || !LEVELS.includes(newLevel)) newLevel = state.level;
 
     addBubble("AI", reply);
     speak(reply);
 
-    updateLevel(newLevel);
-    saveTurn();
+    state.level = newLevel;
+    localStorage.setItem("state", JSON.stringify(state));
     updateUI();
 
-    setTimeout(() => speakBtn.click(), 1500); // conversa contínua
+    // conversa contínua
+    setTimeout(() => speakBtn.click(), 1800);
 
   } catch {
     feedback.textContent = "AI unavailable.";
@@ -140,6 +135,8 @@ Level:
 
 /* ================= TTS ================= */
 function speak(text) {
+  if (!text) return;
+
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
   u.rate = 0.95;
@@ -156,58 +153,31 @@ function speak(text) {
 
 /* ================= HELPERS ================= */
 function extract(text, label) {
-  const m = text.match(new RegExp(label + ":([\\s\\S]*)", "i"));
+  const r = new RegExp(label + ":([\\s\\S]*?)(\\n|$)", "i");
+  const m = text.match(r);
   return m ? m[1].trim() : "";
 }
 
 function addBubble(who, text) {
   const div = document.createElement("div");
-  div.className = who === "You" ? "text-blue-400 mb-1" : "text-green-400 mb-1";
+  div.className =
+    who === "You"
+      ? "text-blue-400 mb-1"
+      : "text-green-400 mb-1";
   div.textContent = who + ": " + text;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
-function updateLevel(newLevel) {
-  if (LEVELS.indexOf(newLevel) > LEVELS.indexOf(state.level)) {
-    state.level = newLevel;
-  }
-}
-
-function saveTurn() {
-  state.history.push(LEVELS.indexOf(state.level));
-  localStorage.setItem("state", JSON.stringify(state));
-}
-
 function updateUI() {
   levelText.textContent = "Level: " + state.level;
   feedback.textContent = "Your turn.";
-  drawChart();
-}
-
-function drawChart() {
-  chart.innerHTML = "";
-  const w = chart.clientWidth || 300;
-  const h = 80;
-
-  state.history.forEach((v, i) => {
-    const x = (i / Math.max(1, state.history.length - 1)) * w;
-    const y = h - v * 15 - 10;
-
-    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    c.setAttribute("cx", x);
-    c.setAttribute("cy", y);
-    c.setAttribute("r", 4);
-    c.setAttribute("fill", "#22c55e");
-    chart.appendChild(c);
-  });
 }
 
 /* ================= RESET ================= */
 resetBtn.onclick = () => {
-  if (!confirm("Reset all progress?")) return;
-
-  state = { level: "A1", history: [] };
+  if (!confirm("Reset conversation and progress?")) return;
+  state = { level: "A1" };
   localStorage.removeItem("state");
   chat.innerHTML = "";
   updateUI();
