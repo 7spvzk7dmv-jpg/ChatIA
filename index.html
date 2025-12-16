@@ -12,18 +12,22 @@
 <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
 <p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
-<div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-56 overflow-y-auto text-sm"></div>
+<!-- CHAT -->
+<div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-48 overflow-y-auto text-sm"></div>
 
+<!-- FEEDBACK BOXES -->
 <div class="grid grid-cols-1 gap-2 mb-3">
   <div id="correction" class="bg-gray-800 p-2 rounded text-sm"></div>
   <div id="pronunciation" class="bg-gray-800 p-2 rounded text-sm"></div>
   <div id="reply" class="bg-gray-800 p-2 rounded text-sm"></div>
 </div>
 
+<!-- GRAPH -->
 <canvas id="chart" height="120" class="bg-gray-800 rounded mb-3"></canvas>
 
 <div id="feedback" class="text-xs mb-3"></div>
 
+<!-- CONTROLS -->
 <div class="flex gap-2 mb-3">
   <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
   <button id="hearBtn" class="bg-green-600 px-3 py-2 rounded">🔊 Hear AI</button>
@@ -31,9 +35,11 @@
 </div>
 
 <script>
+/* ================= CONFIG ================= */
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
 const LEVELS = ["A1","A2","B1","B2","C1"];
 
+/* ================= STATE ================= */
 let state = JSON.parse(localStorage.getItem("trainerState")) || {
   level: "A1",
   history: []
@@ -42,6 +48,52 @@ let state = JSON.parse(localStorage.getItem("trainerState")) || {
 let lastAIReply = "";
 let audioUnlocked = false;
 
+/* ================= DOM ================= */
+const chat = document.getElementById("chat");
+const feedback = document.getElementById("feedback");
+const levelText = document.getElementById("levelText");
+
+/* ================= INIT ================= */
+initVoices();
+updateUI();
+
+/* =======================
+   VOZ (TTS) — SAFARI NATURAL
+======================= */
+let selectedVoice = null;
+
+function initVoices() {
+  const preferred = ['Samantha', 'Daniel', 'Aaron'];
+
+  function pickVoice() {
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return;
+
+    selectedVoice =
+      voices.find(v => preferred.includes(v.name) && v.lang.startsWith('en')) ||
+      voices.find(v => v.lang === 'en-US') ||
+      voices[0];
+  }
+
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+
+function speakText(text) {
+  if (!text) return;
+
+  speechSynthesis.cancel();
+  speechSynthesis.resume(); // 🔑 ESSENCIAL NO SAFARI
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  if (selectedVoice) u.voice = selectedVoice;
+  u.rate = 0.95;
+  u.pitch = 1.0;
+
+  speechSynthesis.speak(u);
+}
+
 /* ================= STT ================= */
 document.getElementById("speakBtn").onclick = () => {
   const SR = window.webkitSpeechRecognition;
@@ -49,6 +101,9 @@ document.getElementById("speakBtn").onclick = () => {
 
   const rec = new SR();
   rec.lang = "en-US";
+  rec.interimResults = false;
+
+  feedback.textContent = "🎙️ Listening…";
 
   rec.onresult = e => {
     const spoken = e.results[0][0].transcript.trim();
@@ -61,56 +116,72 @@ document.getElementById("speakBtn").onclick = () => {
 
 /* ================= AI ================= */
 async function askAI(text) {
-  const prompt = `
-You are a strict English teacher.
-Return JSON with:
-correction, pronunciation_tips, reply, cefr_score (0-1)
+  feedback.textContent = "🤖 Thinking…";
 
+  const prompt = `
+Return STRICT JSON:
+{
+ "correction": "...",
+ "pronunciation": "...",
+ "reply": "...",
+ "cefr": 0-1
+}
+
+You are a strict American English teacher.
+Student level: ${state.level}
 Student said: "${text}"
 `;
 
-  const res = await fetch(WORKER_URL,{
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ prompt })
-  });
+  try {
+    const res = await fetch(WORKER_URL,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ prompt })
+    });
 
-  const data = await res.json();
-  let parsed;
+    const data = await res.json();
+    const parsed = JSON.parse(data.reply);
 
-  try { parsed = JSON.parse(data.reply); }
-  catch { return; }
+    document.getElementById("correction").innerHTML =
+      "<b>Correction:</b> " + parsed.correction;
 
-  document.getElementById("correction").innerHTML =
-    "<b>Correction:</b> " + parsed.correction;
+    document.getElementById("pronunciation").innerHTML =
+      "<b>Pronunciation:</b> " + parsed.pronunciation;
 
-  document.getElementById("pronunciation").innerHTML =
-    "<b>Pronunciation:</b> " + parsed.pronunciation_tips;
+    document.getElementById("reply").innerHTML =
+      "<b>Reply:</b> " + parsed.reply;
 
-  document.getElementById("reply").innerHTML =
-    "<b>Reply:</b> " + parsed.reply;
+    lastAIReply = parsed.reply;
 
-  lastAIReply = parsed.reply;
+    updateCEFR(parsed.cefr);
+    drawChart();
 
-  updateCEFR(parsed.cefr_score);
-  drawChart();
+    if (audioUnlocked) speakText(lastAIReply);
 
-  if (audioUnlocked) speak(lastAIReply);
+    feedback.textContent = "Your turn.";
+
+  } catch {
+    feedback.textContent = "AI unavailable.";
+  }
 }
 
 /* ================= CEFR ================= */
 function updateCEFR(score){
   state.history.push(score);
-  const avg = state.history.slice(-5).reduce((a,b)=>a+b,0)/Math.min(5,state.history.length);
+  const recent = state.history.slice(-5);
+  const avg = recent.reduce((a,b)=>a+b,0)/recent.length;
 
-  let idx = Math.round(avg*(LEVELS.length-1));
+  const idx = Math.min(
+    LEVELS.length-1,
+    Math.max(0, Math.round(avg*(LEVELS.length-1)))
+  );
+
   state.level = LEVELS[idx];
-
   localStorage.setItem("trainerState",JSON.stringify(state));
-  document.getElementById("levelText").textContent = "Level: " + state.level;
+  updateUI();
 }
 
-/* ================= CHART ================= */
+/* ================= GRAPH ================= */
 function drawChart(){
   const c = document.getElementById("chart");
   const ctx = c.getContext("2d");
@@ -128,25 +199,14 @@ function drawChart(){
   ctx.stroke();
 }
 
-/* ================= TTS ================= */
+/* ================= AUDIO UNLOCK ================= */
 document.getElementById("hearBtn").onclick = () => {
-  if(!audioUnlocked){
+  if (!audioUnlocked) {
     speechSynthesis.speak(new SpeechSynthesisUtterance("."));
-    audioUnlocked=true;
+    audioUnlocked = true;
   }
-  speak(lastAIReply);
+  speakText(lastAIReply);
 };
-
-function speak(t){
-  if(!t) return;
-  const u = new SpeechSynthesisUtterance(t);
-  u.lang="en-US";
-  u.rate=0.92;
-  const voices = speechSynthesis.getVoices();
-  u.voice = voices.find(v=>v.name==="Samantha") || voices.find(v=>v.lang==="en-US");
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
-}
 
 /* ================= UI ================= */
 function addChat(who,text){
@@ -154,11 +214,16 @@ function addChat(who,text){
   d.className = who==="You"?"text-blue-400":"text-green-400";
   d.textContent = who+": "+text;
   chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function updateUI(){
+  levelText.textContent = "Level: " + state.level;
 }
 
 /* ================= RESET ================= */
 document.getElementById("resetBtn").onclick=()=>{
-  if(confirm("Reset everything?")){
+  if(confirm("Reset all progress?")){
     localStorage.clear();
     location.reload();
   }
