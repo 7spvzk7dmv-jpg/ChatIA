@@ -13,7 +13,7 @@
 <p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
 <div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto text-sm"></div>
-<div id="feedback" class="text-xs text-gray-400 mb-3"></div>
+<div id="feedback" class="text-xs mb-3"></div>
 
 <div class="flex gap-2 mb-3">
   <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
@@ -24,20 +24,27 @@
 <script>
 /* ================= CONFIG ================= */
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
+const LEVELS = ["A1","A2","B1","B2","C1"];
 
 /* ================= STATE ================= */
+let state = JSON.parse(localStorage.getItem("trainerState")) || {
+  level: "A1",
+  streak: 0
+};
+
 let lastAIReply = "";
 let audioUnlocked = false;
 
 /* ================= DOM ================= */
 const chat = document.getElementById("chat");
 const feedback = document.getElementById("feedback");
-const speakBtn = document.getElementById("speakBtn");
-const hearBtn = document.getElementById("hearBtn");
-const resetBtn = document.getElementById("resetBtn");
+const levelText = document.getElementById("levelText");
+
+/* ================= INIT ================= */
+updateUI();
 
 /* ================= STT ================= */
-speakBtn.onclick = () => {
+document.getElementById("speakBtn").onclick = () => {
   const SR = window.webkitSpeechRecognition;
   if (!SR) return alert("Speech recognition not supported");
 
@@ -48,30 +55,44 @@ speakBtn.onclick = () => {
   feedback.textContent = "🎙️ Listening…";
 
   rec.onresult = e => {
-    const text = e.results[0][0].transcript;
-    addBubble("You", text);
-    askAI(text);
+    const spoken = e.results[0][0].transcript.trim();
+    addBubble("You", spoken);
+    askAI(spoken);
   };
 
   rec.start();
 };
 
 /* ================= AI ================= */
-async function askAI(text) {
-  feedback.textContent = "🤖 AI responding…";
+async function askAI(userText) {
+  feedback.textContent = "🤖 Thinking…";
+
+  const prompt = `
+You are a strict American English teacher.
+Student CEFR level: ${state.level}
+Student said: "${userText}"
+
+Tasks:
+- Correct grammar explicitly
+- Point pronunciation issues
+- Respond naturally
+- Ask ONE follow-up question
+`;
 
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: text })
+      body: JSON.stringify({ prompt })
     });
 
     const data = await res.json();
     lastAIReply = data.reply;
 
     addBubble("AI", lastAIReply);
-    feedback.textContent = "Click 🔊 Hear AI";
+    feedback.textContent = "🔎 Review the correction, then listen.";
+
+    if (audioUnlocked) speak(lastAIReply);
 
   } catch {
     feedback.textContent = "AI unavailable.";
@@ -79,40 +100,59 @@ async function askAI(text) {
 }
 
 /* ================= TTS ================= */
-hearBtn.onclick = () => {
-  if (!lastAIReply) return;
+document.getElementById("hearBtn").onclick = () => {
+  if (!audioUnlocked) unlockAudio();
+  speak(lastAIReply);
+};
 
-  const u = new SpeechSynthesisUtterance(lastAIReply);
+function unlockAudio() {
+  const u = new SpeechSynthesisUtterance(".");
+  speechSynthesis.speak(u);
+  audioUnlocked = true;
+}
+
+function speak(text) {
+  if (!text) return;
+
+  const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
-  u.rate = 0.95;
+  u.rate = 0.92;
+  u.pitch = 1.0;
 
   const voices = speechSynthesis.getVoices();
   u.voice =
     voices.find(v => v.name === "Samantha") ||
+    voices.find(v => v.name === "Aaron") ||
     voices.find(v => v.lang === "en-US") ||
     null;
 
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
-
-  audioUnlocked = true;
-};
+}
 
 /* ================= UI ================= */
 function addBubble(who, text) {
   const div = document.createElement("div");
-  div.className = who === "You" ? "text-blue-400 mb-1" : "text-green-400 mb-1";
+  div.className =
+    who === "You"
+      ? "text-blue-400 mb-1"
+      : "text-green-400 mb-1";
   div.textContent = `${who}: ${text}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
+function updateUI() {
+  levelText.textContent = `Level: ${state.level}`;
+}
+
 /* ================= RESET ================= */
-resetBtn.onclick = () => {
-  if (!confirm("Reset conversation?")) return;
+document.getElementById("resetBtn").onclick = () => {
+  if (!confirm("Reset progress?")) return;
+  localStorage.removeItem("trainerState");
   chat.innerHTML = "";
-  lastAIReply = "";
-  feedback.textContent = "Your turn.";
+  state = { level: "A1", streak: 0 };
+  updateUI();
 };
 </script>
 
