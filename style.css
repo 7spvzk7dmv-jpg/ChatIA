@@ -43,3 +43,10 @@ button {
 .level { border-color: #9334e6; }
 .error { border-color: #d93025; }
 
+.bad {
+  color: #d93025;
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+
