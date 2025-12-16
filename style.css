@@ -1,0 +1,30 @@
+body {
+  font-family: Arial, sans-serif;
+  background: #f5f5f5;
+  padding: 20px;
+}
+
+.chat {
+  background: white;
+  padding: 10px;
+  height: 300px;
+  overflow-y: auto;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.user {
+  color: #1a73e8;
+  margin: 5px 0;
+}
+
+.ai {
+  color: #188038;
+  margin: 5px 0;
+}
+
+button {
+  padding: 10px;
+  font-size: 16px;
+  cursor: pointer;
+}
