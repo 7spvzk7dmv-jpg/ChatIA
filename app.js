@@ -3,125 +3,125 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= CONFIG ================= */
 
   const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
-  const levels = ["A1","A2","B1","B2","C1"];
+
+  const levels = ["A1", "A2", "B1", "B2", "C1"];
 
   /* ================= STATE ================= */
 
   let stats = JSON.parse(localStorage.getItem("stats")) || {
     level: "A1",
-    score: [],
     hits: 0,
     errors: 0
   };
 
-  let continuousMode = false;
-  let listening = false;
-  let recognition = null;
+  let lastUserText = "";
 
   /* ================= DOM ================= */
 
   const chat = document.getElementById("chat");
   const feedback = document.getElementById("feedback");
   const levelText = document.getElementById("levelText");
-  const micBtn = document.getElementById("micBtn");
-  const toggleModeBtn = document.getElementById("toggleModeBtn");
 
-  /* ================= INIT ================= */
+  const micBtn = document.getElementById("micBtn");
+  const askBtn = document.getElementById("askBtn");
+  const resetBtn = document.getElementById("resetBtn");
 
   updateUI();
-  initChart();
 
-  /* ================= STT SAFARI ================= */
+  /* ================= STT — PADRÃO SAFARI ================= */
 
-  function startListening() {
-    if (listening) return;
-
+  micBtn.addEventListener("click", () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      feedback.textContent = "❌ Speech recognition not supported";
+      feedback.textContent = "Speech recognition not supported.";
       return;
     }
 
-    recognition = new SR();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
 
-    listening = true;
-    feedback.textContent = "🎙️ Listening…";
+    feedback.textContent = "Listening…";
 
-    recognition.onresult = e => {
-      const text = e.results[0][0].transcript;
-      addBubble("user", text);
-      listening = false;
-      handleAI(text);
+    rec.onresult = e => {
+      lastUserText = e.results[0][0].transcript;
+      addMessage("You", lastUserText);
+      feedback.textContent = "Now click “Ask AI”.";
     };
 
-    recognition.onerror = () => {
-      listening = false;
-      feedback.textContent = "⚠️ Voice error";
+    rec.onerror = () => {
+      feedback.textContent = "Voice recognition error.";
     };
 
-    recognition.start();
-  }
+    rec.start(); // ⚠️ não mover
+  });
 
-  micBtn.onclick = startListening;
+  /* ================= ASK AI ================= */
 
-  /* ================= AI FLOW ================= */
+  askBtn.addEventListener("click", async () => {
+    if (!lastUserText) {
+      feedback.textContent = "Speak first.";
+      return;
+    }
 
-  async function handleAI(text) {
-    feedback.textContent = "🤖 AI responding…";
+    feedback.textContent = "AI thinking…";
 
     try {
-      const aiRaw = await askAI(text);
-      const ai = parseAI(aiRaw);
+      const aiText = await askAI(lastUserText);
+      addMessage("AI", aiText);
 
-      addBubble("ai", ai.reply);
-      speak(ai.reply);
+      speak(aiText);
 
-      updateScore(ai.level);
+      stats.hits++;
+      saveStats();
       updateUI();
 
-      if (continuousMode) {
-        setTimeout(startListening, 1500); // pausa automática
-      }
+      feedback.textContent = "Your turn.";
     } catch {
-      feedback.textContent = "❌ AI unavailable";
+      feedback.textContent = "AI unavailable.";
     }
-  }
+  });
 
-  async function askAI(text) {
+  /* ================= RESET ================= */
+
+  resetBtn.addEventListener("click", () => {
+    if (!confirm("Reset conversation and progress?")) return;
+
+    stats = { level: "A1", hits: 0, errors: 0 };
+    lastUserText = "";
+    chat.innerHTML = "";
+    saveStats();
+    updateUI();
+    feedback.textContent = "Progress reset.";
+  });
+
+  /* ================= HELPERS ================= */
+
+  function askAI(text) {
     const prompt = `
-You are a strict American English teacher.
-Correct grammar and pronunciation.
-Adapt difficulty to CEFR.
+You are an American English teacher.
+Be clear and direct.
 
 Student level: ${stats.level}
 User said: "${text}"
 
-Format:
-Reply:
-Level:
+Reply naturally.
 `;
 
-    const res = await fetch(WORKER_URL, {
+    return fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt })
-    });
-
-    const data = await res.json();
-    return data.generated_text || data[0]?.generated_text;
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (Array.isArray(d) && d[0]?.generated_text) return d[0].generated_text;
+        if (d.generated_text) return d.generated_text;
+        throw new Error();
+      });
   }
-
-  function parseAI(t) {
-    const g = l =>
-      (t.match(new RegExp(l+":([\\s\\S]*?)(?=\\n[A-Z]|$)","i"))||["",""])[1].trim();
-    return { reply: g("Reply"), level: g("Level") || stats.level };
-  }
-
-  /* ================= TTS ================= */
 
   function speak(text) {
     const u = new SpeechSynthesisUtterance(text);
@@ -138,36 +138,12 @@ Level:
     speechSynthesis.speak(u);
   }
 
-  /* ================= UI ================= */
-
-  function addBubble(type, text) {
-    const div = document.createElement("div");
-    div.className =
-      type === "user"
-        ? "text-blue-400 mb-2"
-        : "text-green-400 mb-2";
-    div.textContent = (type === "user" ? "You: " : "AI: ") + text;
-    chat.appendChild(div);
+  function addMessage(author, text) {
+    const p = document.createElement("p");
+    p.textContent = `${author}: ${text}`;
+    p.className = author === "You" ? "text-blue-400 mb-1" : "text-green-400 mb-1";
+    chat.appendChild(p);
     chat.scrollTop = chat.scrollHeight;
-  }
-
-  toggleModeBtn.onclick = () => {
-    continuousMode = !continuousMode;
-    toggleModeBtn.textContent =
-      `🔁 Continuous: ${continuousMode ? "ON" : "OFF"}`;
-  };
-
-  function updateScore(newLevel) {
-    if (levels.indexOf(newLevel) > levels.indexOf(stats.level)) {
-      stats.level = newLevel;
-      stats.hits++;
-    } else {
-      stats.errors++;
-    }
-
-    stats.score.push(levels.indexOf(stats.level));
-    localStorage.setItem("stats", JSON.stringify(stats));
-    updateChart();
   }
 
   function updateUI() {
@@ -175,29 +151,8 @@ Level:
       `Level: ${stats.level} | Hits: ${stats.hits} | Errors: ${stats.errors}`;
   }
 
-  /* ================= CHART ================= */
-
-  let chart;
-
-  function initChart() {
-    const ctx = document.getElementById("progressChart");
-    chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: stats.score.map((_, i) => i + 1),
-        datasets: [{
-          label: "CEFR Progress",
-          data: stats.score,
-          borderWidth: 2
-        }]
-      }
-    });
-  }
-
-  function updateChart() {
-    chart.data.labels.push(chart.data.labels.length + 1);
-    chart.data.datasets[0].data = stats.score;
-    chart.update();
+  function saveStats() {
+    localStorage.setItem("stats", JSON.stringify(stats));
   }
 
 });
