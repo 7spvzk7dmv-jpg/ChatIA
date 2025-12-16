@@ -12,22 +12,18 @@
 <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
 <p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
-<!-- CHAT -->
 <div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-48 overflow-y-auto text-sm"></div>
 
-<!-- FEEDBACK BOXES -->
 <div class="grid grid-cols-1 gap-2 mb-3">
   <div id="correction" class="bg-gray-800 p-2 rounded text-sm"></div>
   <div id="pronunciation" class="bg-gray-800 p-2 rounded text-sm"></div>
   <div id="reply" class="bg-gray-800 p-2 rounded text-sm"></div>
 </div>
 
-<!-- GRAPH -->
 <canvas id="chart" height="120" class="bg-gray-800 rounded mb-3"></canvas>
 
 <div id="feedback" class="text-xs mb-3"></div>
 
-<!-- CONTROLS -->
 <div class="flex gap-2 mb-3">
   <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
   <button id="hearBtn" class="bg-green-600 px-3 py-2 rounded">🔊 Hear AI</button>
@@ -38,12 +34,15 @@
 /* ================= CONFIG ================= */
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
 const LEVELS = ["A1","A2","B1","B2","C1"];
+const MEMORY_LIMIT = 6;
 
 /* ================= STATE ================= */
 let state = JSON.parse(localStorage.getItem("trainerState")) || {
   level: "A1",
   history: []
 };
+
+let conversation = JSON.parse(localStorage.getItem("conversation")) || [];
 
 let lastUserSpeech = "";
 let lastAIReply = "";
@@ -54,12 +53,11 @@ const chat = document.getElementById("chat");
 const levelText = document.getElementById("levelText");
 const feedback = document.getElementById("feedback");
 
-/* ================= VOZ NATURAL (Safari correto) ================= */
+/* ================= VOZ NATURAL ================= */
 let selectedVoice = null;
 
 function initVoices() {
   const preferred = ['Samantha', 'Daniel', 'Aaron'];
-
   function pickVoice() {
     const voices = speechSynthesis.getVoices();
     if (!voices.length) return;
@@ -68,26 +66,22 @@ function initVoices() {
       voices.find(v => v.lang === 'en-US') ||
       voices[0];
   }
-
   pickVoice();
   speechSynthesis.onvoiceschanged = pickVoice;
 }
+initVoices();
 
 function speakText(text) {
   if (!text) return;
   speechSynthesis.cancel();
   speechSynthesis.resume();
-
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
   if (selectedVoice) u.voice = selectedVoice;
   u.rate = 0.95;
   u.pitch = 1.0;
-
   speechSynthesis.speak(u);
 }
-
-initVoices();
 
 /* ================= STT ================= */
 document.getElementById("speakBtn").onclick = () => {
@@ -103,69 +97,79 @@ document.getElementById("speakBtn").onclick = () => {
   rec.onresult = e => {
     lastUserSpeech = e.results[0][0].transcript.trim();
     addChat("You", lastUserSpeech);
+    pushMemory("User", lastUserSpeech);
     askAI(lastUserSpeech);
   };
-
   rec.start();
 };
 
-/* ================= NORMALIZAÇÃO / SIMILARIDADE ================= */
+/* ================= MEMORY ================= */
+function pushMemory(role, text) {
+  conversation.push({ role, text });
+  if (conversation.length > MEMORY_LIMIT * 2) {
+    conversation = conversation.slice(-MEMORY_LIMIT * 2);
+  }
+  localStorage.setItem("conversation", JSON.stringify(conversation));
+}
+
+function memoryText() {
+  return conversation.map(m => `${m.role}: ${m.text}`).join("\n");
+}
+
+/* ================= NORMALIZE / SIMILARITY ================= */
 function normalize(t) {
   return t.toLowerCase().replace(/[^a-z']/g,' ').replace(/\s+/g,' ').trim();
 }
-
 function similarity(a,b) {
-  let same = 0;
-  for (let i=0;i<Math.min(a.length,b.length);i++)
-    if (a[i]===b[i]) same++;
-  return same / Math.max(a.length,b.length);
+  let same=0;
+  for(let i=0;i<Math.min(a.length,b.length);i++)
+    if(a[i]===b[i]) same++;
+  return same/Math.max(a.length,b.length);
 }
-
 function highlight(target, spoken) {
-  const t = normalize(target).split(' ');
-  const s = normalize(spoken).split(' ');
-
+  const t=normalize(target).split(' ');
+  const s=normalize(spoken).split(' ');
   return t.map((w,i)=>{
-    const score = similarity(w, s[i]||'');
-    if (score >= 0.85) return `<span>${w}</span>`;
-    const cls = score >= 0.5
-      ? 'text-yellow-400 underline cursor-pointer'
-      : 'text-red-400 underline cursor-pointer';
+    const score=similarity(w,s[i]||'');
+    if(score>=0.85) return `<span>${w}</span>`;
+    const cls=score>=0.5?'text-yellow-400 underline cursor-pointer':'text-red-400 underline cursor-pointer';
     return `<span class="${cls}" data-word="${w}">${w}</span>`;
   }).join(' ');
 }
-
 function attachWordListeners() {
   document.querySelectorAll('[data-word]').forEach(el=>{
-    el.onclick = () => speakText(el.dataset.word);
+    el.onclick=()=>speakText(el.dataset.word);
   });
 }
 
-/* ================= AI (CONVERSACIONAL, NÃO CHATO) ================= */
+/* ================= AI WITH MEMORY ================= */
 async function askAI(text) {
   feedback.textContent = "🤖 Thinking…";
 
   const prompt = `
 You are a conversational American English partner.
 
+Conversation so far:
+${memoryText()}
+
 Rules:
-- Speak naturally.
-- Only correct the student if there is a real mistake.
-- If correcting, be brief.
-- Keep the conversation flowing.
+- Respond naturally.
+- Only correct if there is a real mistake.
+- Be brief when correcting.
+- Keep the topic unless the user changes it.
 - Ask ONE short follow-up question.
 
-Return a JSON object:
+Return JSON:
 {
  "corrected": true|false,
- "correction": "...",
- "pronunciation": "...",
- "reply": "...",
+ "correction": "",
+ "pronunciation": "",
+ "reply": "",
  "cefr": 0-1
 }
 
 Student level: ${state.level}
-Student said: "${text}"
+Last student message: "${text}"
 `;
 
   try {
@@ -179,105 +183,92 @@ Student said: "${text}"
     let raw = data.reply || "";
 
     let parsed = {
-      corrected: false,
-      correction: "",
-      pronunciation: "",
-      reply: raw,
-      cefr: 0.5
+      corrected:false,
+      correction:"",
+      pronunciation:"",
+      reply:raw,
+      cefr:0.5
     };
 
     try {
-      const start = raw.indexOf("{");
-      const end = raw.lastIndexOf("}");
-      if (start !== -1 && end !== -1) {
-        parsed = JSON.parse(raw.slice(start, end + 1));
-      }
+      const s=raw.indexOf("{"), e=raw.lastIndexOf("}");
+      if(s!==-1 && e!==-1) parsed=JSON.parse(raw.slice(s,e+1));
     } catch {}
 
-    if (parsed.corrected) {
+    if(parsed.corrected){
       document.getElementById("correction").innerHTML =
         "<b>Correction:</b> " + highlight(parsed.correction, lastUserSpeech);
       attachWordListeners();
-
       document.getElementById("pronunciation").innerHTML =
         "<b>Pronunciation:</b> " + parsed.pronunciation;
     } else {
-      document.getElementById("correction").innerHTML = "";
-      document.getElementById("pronunciation").innerHTML = "";
+      document.getElementById("correction").innerHTML="";
+      document.getElementById("pronunciation").innerHTML="";
     }
 
     document.getElementById("reply").innerHTML =
       "<b>Reply:</b> " + parsed.reply;
 
     lastAIReply = parsed.reply;
+    pushMemory("AI", parsed.reply);
 
-    updateCEFR(Number(parsed.cefr) || 0.5);
+    updateCEFR(Number(parsed.cefr)||0.5);
     drawChart();
 
-    if (audioUnlocked) speakText(lastAIReply);
+    if(audioUnlocked) speakText(lastAIReply);
 
-    feedback.textContent = "Your turn.";
+    feedback.textContent="Your turn.";
 
-  } catch (e) {
-    feedback.textContent = "AI unavailable.";
+  } catch(e) {
+    feedback.textContent="AI unavailable.";
     console.error(e);
   }
 }
 
-/* ================= CEFR + GRÁFICO ================= */
-function updateCEFR(score) {
+/* ================= CEFR + GRAPH ================= */
+function updateCEFR(score){
   state.history.push(score);
-  const recent = state.history.slice(-5);
-  const avg = recent.reduce((a,b)=>a+b,0)/recent.length;
-
-  const idx = Math.min(
-    LEVELS.length-1,
-    Math.max(0, Math.round(avg*(LEVELS.length-1)))
-  );
-
-  state.level = LEVELS[idx];
-  localStorage.setItem("trainerState", JSON.stringify(state));
-  levelText.textContent = "Level: " + state.level;
+  const r=state.history.slice(-5);
+  const avg=r.reduce((a,b)=>a+b,0)/r.length;
+  state.level=LEVELS[Math.min(LEVELS.length-1,Math.max(0,Math.round(avg*(LEVELS.length-1))))];
+  localStorage.setItem("trainerState",JSON.stringify(state));
+  levelText.textContent="Level: "+state.level;
 }
-
-function drawChart() {
-  const c = document.getElementById("chart");
-  const ctx = c.getContext("2d");
+function drawChart(){
+  const c=document.getElementById("chart");
+  const ctx=c.getContext("2d");
   ctx.clearRect(0,0,c.width,c.height);
-
-  ctx.strokeStyle = "#4ade80";
+  ctx.strokeStyle="#4ade80";
   ctx.beginPath();
-
   state.history.slice(-20).forEach((v,i)=>{
-    const x = i*(c.width/20);
-    const y = c.height - v*c.height;
-    i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+    const x=i*(c.width/20);
+    const y=c.height-v*c.height;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
   });
-
   ctx.stroke();
 }
 
 /* ================= UI ================= */
-function addChat(who,text) {
-  const d = document.createElement("div");
-  d.className = who==="You" ? "text-blue-400" : "text-green-400";
-  d.textContent = who + ": " + text;
+function addChat(w,t){
+  const d=document.createElement("div");
+  d.className=w==="You"?"text-blue-400":"text-green-400";
+  d.textContent=w+": "+t;
   chat.appendChild(d);
-  chat.scrollTop = chat.scrollHeight;
+  chat.scrollTop=chat.scrollHeight;
 }
 
 /* ================= AUDIO UNLOCK ================= */
-document.getElementById("hearBtn").onclick = () => {
-  if (!audioUnlocked) {
+document.getElementById("hearBtn").onclick=()=>{
+  if(!audioUnlocked){
     speechSynthesis.speak(new SpeechSynthesisUtterance("."));
-    audioUnlocked = true;
+    audioUnlocked=true;
   }
   speakText(lastAIReply);
 };
 
 /* ================= RESET ================= */
-document.getElementById("resetBtn").onclick = () => {
-  if (confirm("Reset all progress?")) {
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("Reset everything?")){
     localStorage.clear();
     location.reload();
   }
