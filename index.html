@@ -1,135 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>AI English Trainer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<title>AI English Trainer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-gray-100 p-4">
 
-  <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
-  <p id="levelText" class="text-sm text-gray-400 mb-2"></p>
+<h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
+<p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
-  <!-- Chat -->
-  <div
-    id="chat"
-    class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto text-sm"
-  ></div>
+<div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto text-sm"></div>
+<div id="feedback" class="text-xs text-gray-400 mb-3"></div>
 
-  <div id="feedback" class="text-xs text-gray-400 mb-3"></div>
-
-  <!-- Controls -->
-  <div class="flex gap-2 mb-3">
-    <button
-      id="speakBtn"
-      class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded"
-    >
-      🎤 Speak
-    </button>
-
-    <button
-      id="resetBtn"
-      class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded"
-    >
-      ♻️ Reset
-    </button>
-  </div>
+<div class="flex gap-2 mb-3">
+  <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
+  <button id="hearBtn" class="bg-green-600 px-3 py-2 rounded">🔊 Hear AI</button>
+  <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
+</div>
 
 <script>
 /* ================= CONFIG ================= */
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
-const LEVELS = ["A1","A2","B1","B2","C1"];
 
 /* ================= STATE ================= */
-let state = JSON.parse(localStorage.getItem("aiTrainerState")) || {
-  level: "A1"
-};
-
-let listening = false;
+let lastAIReply = "";
+let audioUnlocked = false;
 
 /* ================= DOM ================= */
 const chat = document.getElementById("chat");
 const feedback = document.getElementById("feedback");
-const levelText = document.getElementById("levelText");
 const speakBtn = document.getElementById("speakBtn");
+const hearBtn = document.getElementById("hearBtn");
 const resetBtn = document.getElementById("resetBtn");
 
-/* ================= INIT ================= */
-updateUI();
-
-/* ================= STT (Safari-safe) ================= */
+/* ================= STT ================= */
 speakBtn.onclick = () => {
-  if (listening) return;
-
   const SR = window.webkitSpeechRecognition;
-  if (!SR) {
-    feedback.textContent = "Speech recognition not supported on this browser.";
-    return;
-  }
+  if (!SR) return alert("Speech recognition not supported");
 
   const rec = new SR();
   rec.lang = "en-US";
-  rec.continuous = false;
   rec.interimResults = false;
 
-  listening = true;
   feedback.textContent = "🎙️ Listening…";
 
   rec.onresult = e => {
-    listening = false;
-    const text = e.results[0][0].transcript.trim();
+    const text = e.results[0][0].transcript;
     addBubble("You", text);
     askAI(text);
-  };
-
-  rec.onerror = () => {
-    listening = false;
-    feedback.textContent = "Voice recognition error.";
   };
 
   rec.start();
 };
 
 /* ================= AI ================= */
-async function askAI(userText) {
+async function askAI(text) {
   feedback.textContent = "🤖 AI responding…";
-
-  const prompt = `
-Student CEFR level: ${state.level}
-
-Student said:
-"${userText}"
-
-Instructions:
-- Respond in natural American English
-- Correct mistakes naturally
-- Be slightly strict but encouraging
-- Ask a follow-up question to keep the conversation going
-`;
 
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt: text })
     });
 
-    if (!res.ok) throw new Error();
-
     const data = await res.json();
-    const reply = data.reply?.trim();
+    lastAIReply = data.reply;
 
-    if (!reply) throw new Error();
-
-    addBubble("AI", reply);
-    speak(reply);
-
-    // conversa contínua (turno automático)
-    setTimeout(() => speakBtn.click(), 1800);
-
-    feedback.textContent = "Your turn.";
+    addBubble("AI", lastAIReply);
+    feedback.textContent = "Click 🔊 Hear AI";
 
   } catch {
     feedback.textContent = "AI unavailable.";
@@ -137,48 +79,40 @@ Instructions:
 }
 
 /* ================= TTS ================= */
-function speak(text) {
-  if (!text) return;
+hearBtn.onclick = () => {
+  if (!lastAIReply) return;
 
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "en-US";
-  utter.rate = 0.95;
+  const u = new SpeechSynthesisUtterance(lastAIReply);
+  u.lang = "en-US";
+  u.rate = 0.95;
 
   const voices = speechSynthesis.getVoices();
-  utter.voice =
+  u.voice =
     voices.find(v => v.name === "Samantha") ||
     voices.find(v => v.lang === "en-US") ||
     null;
 
   speechSynthesis.cancel();
-  speechSynthesis.speak(utter);
-}
+  speechSynthesis.speak(u);
+
+  audioUnlocked = true;
+};
 
 /* ================= UI ================= */
 function addBubble(who, text) {
   const div = document.createElement("div");
-  div.className =
-    who === "You"
-      ? "text-blue-400 mb-1"
-      : "text-green-400 mb-1";
+  div.className = who === "You" ? "text-blue-400 mb-1" : "text-green-400 mb-1";
   div.textContent = `${who}: ${text}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
-function updateUI() {
-  levelText.textContent = `Level: ${state.level}`;
-  feedback.textContent = "Your turn.";
-}
-
 /* ================= RESET ================= */
 resetBtn.onclick = () => {
-  if (!confirm("Reset conversation and progress?")) return;
-
-  state = { level: "A1" };
-  localStorage.removeItem("aiTrainerState");
+  if (!confirm("Reset conversation?")) return;
   chat.innerHTML = "";
-  updateUI();
+  lastAIReply = "";
+  feedback.textContent = "Your turn.";
 };
 </script>
 
