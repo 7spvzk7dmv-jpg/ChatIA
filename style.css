@@ -28,3 +28,18 @@ button {
   font-size: 16px;
   cursor: pointer;
 }
+
+.block {
+  background: #fff;
+  border-left: 4px solid #ccc;
+  padding: 8px;
+  margin: 6px 0;
+  border-radius: 4px;
+}
+
+.correction { border-color: #1a73e8; }
+.pronunciation { border-color: #f9ab00; }
+.reply { border-color: #188038; }
+.level { border-color: #9334e6; }
+.error { border-color: #d93025; }
+
