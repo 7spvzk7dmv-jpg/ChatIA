@@ -45,7 +45,7 @@ Level:
     {
       method: "POST",
       headers: {
-        "Authorization": "Bearer hf_YOUR_FREE_TOKEN",
+        "Authorization": "Bearer hf_hf_XiOxCCBRZnNqxuyqmHPMmXyWAHsLyJTyBB",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ inputs: prompt })
