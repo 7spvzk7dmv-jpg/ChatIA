@@ -1,27 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>AI English Trainer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<title>AI English Trainer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-gray-100 p-4">
 
-  <h1 class="text-xl font-bold mb-2">AI English Trainer</h1>
-  <p id="levelText" class="text-sm text-gray-400 mb-3"></p>
+<h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
+<p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
-  <div id="chat" class="bg-gray-800 p-3 rounded mb-3 min-h-[120px]"></div>
-  <div id="feedback" class="text-sm mb-3"></div>
+<div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto"></div>
+<div id="feedback" class="text-sm mb-3"></div>
 
-  <div class="flex gap-2 mb-3">
-    <button id="micBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
-    <button id="askBtn" class="bg-purple-600 px-3 py-2 rounded">🤖 Ask AI</button>
-    <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
-  </div>
+<div class="flex gap-2 mb-3">
+  <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
+  <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
+</div>
 
-  <script src="app.js"></script>
+<svg id="chart" width="100%" height="80" class="bg-gray-800 rounded"></svg>
+
+<script>
+/* ================= CONFIG ================= */
+const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
+const LEVELS = ["A1","A2","B1","B2","C1"];
+
+/* ================= STATE ================= */
+let state = JSON.parse(localStorage.getItem("state")) || {
+  level: "A1",
+  history: []
+};
+let listening = false;
+
+/* ================= DOM ================= */
+const chat = document.getElementById("chat");
+const feedback = document.getElementById("feedback");
+const levelText = document.getElementById("levelText");
+const speakBtn = document.getElementById("speakBtn");
+const resetBtn = document.getElementById("resetBtn");
+const chart = document.getElementById("chart");
+
+/* ================= INIT ================= */
+updateUI();
+drawChart();
+
+/* ================= STT SAFARI ================= */
+speakBtn.onclick = () => {
+  if (listening) return;
+
+  const SR = window.webkitSpeechRecognition;
+  if (!SR) {
+    feedback.textContent = "Speech recognition not supported.";
+    return;
+  }
+
+  const rec = new SR();
+  rec.lang = "en-US";
+  rec.continuous = false;
+  rec.interimResults = false;
+
+  listening = true;
+  feedback.textContent = "🎙️ Listening…";
+
+  rec.onresult = e => {
+    listening = false;
+    const text = e.results[0][0].transcript;
+    addBubble("You", text);
+    askAI(text);
+  };
+
+  rec.onerror = () => {
+    listening = false;
+    feedback.textContent = "Voice error.";
+  };
+
+  rec.start();
+};
+
+/* ================= IA FLOW ================= */
+async function askAI(text) {
+  feedback.textContent = "🤖 AI responding…";
+
+  const prompt = `
+You are a strict American English teacher.
+Correct grammar and pronunciation.
+Adapt difficulty.
+
+Student level: ${state.level}
+User said: "${text}"
+
+Format:
+Reply:
+Level:
+`;
+
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({prompt})
+    });
+
+    const data = await res.json();
+    const output = data.generated_text || data[0]?.generated_text || "";
+    const reply = extract(output,"Reply");
+    const newLevel = extract(output,"Level") || state.level;
+
+    addBubble("AI", reply);
+    speak(reply);
+
+    updateLevel(newLevel);
+    saveTurn();
+    updateUI();
+
+    setTimeout(()=>speakBtn.click(),1500); // conversa contínua
+
+  } catch {
+    feedback.textContent = "AI unavailable.";
+  }
+}
+
+/* ================= TTS ================= */
+function speak(text){
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-US";
+  u.rate = 0.95;
+
+  const voices = speechSynthesis.getVoices();
+  u.voice = voices.find(v=>v.name==="Samantha") || voices.find(v=>v.lang==="en-US") || null;
+
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+/* ================= HELPERS ================= */
+function extract(t,label){
+  const m = t.match(new RegExp(label+":([\\s\\S]*)","i"));
+  return m ? m[1].trim() : "";
+}
+
+function addBubble(who,text){
+  const p = document.createElement("div");
+  p.className = who==="You"?"text-blue-400 mb-1":"text-green-400 mb-1";
+  p.textContent = who+": "+text;
+  chat.appendChild(p);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function updateLevel(lvl){
+  if (LEVELS.indexOf(lvl) > LEVELS.indexOf(state.level))
+    state.level = lvl;
+}
+
+function saveTurn(){
+  state.history.push(LEVELS.indexOf(state.level));
+  localStorage.setItem("state",JSON.stringify(state));
+}
+
+function updateUI(){
+  levelText.textContent = "Level: "+state.level;
+  feedback.textContent = "Your turn.";
+  drawChart();
+}
+
+function drawChart(){
+  chart.innerHTML = "";
+  const w = chart.clientWidth;
+  const h = 80;
+  state.history.forEach((v,i)=>{
+    const x = (i/(state.history.length||1))*w;
+    const y = h - v*15 - 10;
+    const c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx",x);
+    c.setAttribute("cy",y);
+    c.setAttribute("r",4);
+    c.setAttribute("fill","#22c55e");
+    chart.appendChild(c);
+  });
+}
+
+/* ================= RESET ================= */
+resetBtn.onclick = ()=>{
+  if(!confirm("Reset all progress?")) return;
+  state = {level:"A1",history:[]};
+  localStorage.removeItem("state");
+  chat.innerHTML="";
+  updateUI();
+};
+</script>
 </body>
 </html>
