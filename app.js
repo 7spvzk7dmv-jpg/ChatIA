@@ -1,14 +1,12 @@
 /* =====================================================
-   CONFIGURAÇÃO
+   CONFIG
 ===================================================== */
 
-// ⛔ SUBSTITUA pela URL REAL do seu Worker
 const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev/";
-
 const levels = ["A1", "A2", "B1", "B2", "C1"];
 
 /* =====================================================
-   ESTADO
+   STATE
 ===================================================== */
 
 let stats = JSON.parse(localStorage.getItem("stats")) || {
@@ -17,11 +15,9 @@ let stats = JSON.parse(localStorage.getItem("stats")) || {
   errors: 0
 };
 
-let strictMode = JSON.parse(localStorage.getItem("strictMode")) || false;
 let history = JSON.parse(localStorage.getItem("history")) || [];
 
 let lastUserText = "";
-let lastAIReply = "";
 
 /* =====================================================
    DOM
@@ -33,9 +29,6 @@ const levelText = document.getElementById("levelText");
 
 const micBtn = document.getElementById("micBtn");
 const askBtn = document.getElementById("askBtn");
-const listenBtn = document.getElementById("listenBtn");
-const strictBtn = document.getElementById("strictBtn");
-
 const historyDiv = document.getElementById("history");
 
 /* =====================================================
@@ -45,7 +38,7 @@ const historyDiv = document.getElementById("history");
 updateUI();
 
 /* =====================================================
-   STT — PADRÃO QUE FUNCIONA NO SAFARI
+   STT — SAFARI SAFE
 ===================================================== */
 
 micBtn.onclick = () => {
@@ -67,18 +60,18 @@ micBtn.onclick = () => {
   rec.onresult = e => {
     lastUserText = e.results[0][0].transcript;
     englishText.textContent = `You said: ${lastUserText}`;
-    feedback.textContent = "🟡 Ready to ask the AI";
+    feedback.textContent = "🟡 Ready for AI response";
   };
 
   rec.onerror = () => {
     feedback.textContent = "⚠️ Voice recognition error";
   };
 
-  rec.start(); // ⚠️ NÃO mover
+  rec.start();
 };
 
 /* =====================================================
-   CHAMAR IA (manual, Safari-safe)
+   ASK IA + TTS (no mesmo clique)
 ===================================================== */
 
 askBtn.onclick = async () => {
@@ -87,8 +80,7 @@ askBtn.onclick = async () => {
     return;
   }
 
-  feedback.textContent = "⏳ AI thinking…";
-  listenBtn.disabled = true;
+  feedback.textContent = "🤖 AI responding…";
 
   try {
     const aiRaw = await askAI(lastUserText);
@@ -98,10 +90,7 @@ askBtn.onclick = async () => {
       throw new Error("Invalid AI response");
     }
 
-    lastAIReply = ai.reply;
-    listenBtn.disabled = false;
-
-    // Destacar problemas de pronúncia
+    // Pronúncia / correção visual
     englishText.innerHTML = highlightDifferences(
       normalize(ai.correction),
       normalize(lastUserText)
@@ -110,17 +99,20 @@ askBtn.onclick = async () => {
     const errorCount = (englishText.innerHTML.match(/bad/g) || []).length;
 
     if (errorCount === 0) {
-      feedback.textContent = "✅ Acceptable pronunciation";
       stats.hits++;
       adjustLevel(true);
+      feedback.textContent = "✅ Good. Listen to the correction.";
     } else {
-      feedback.textContent = `❌ ${errorCount} pronunciation issues`;
       stats.errors++;
       adjustLevel(false);
+      feedback.textContent = `❌ ${errorCount} issues. Listen carefully.`;
     }
 
     saveHistory(errorCount);
     updateUI();
+
+    // 🔊 TTS — permitido porque está no clique do botão
+    speak(ai.reply);
 
   } catch (e) {
     feedback.textContent = "❌ AI unavailable. Try again.";
@@ -128,13 +120,11 @@ askBtn.onclick = async () => {
 };
 
 /* =====================================================
-   TTS — voz americana mais natural possível (iOS)
+   TTS — voz americana mais natural (iOS)
 ===================================================== */
 
-listenBtn.onclick = () => {
-  if (!lastAIReply) return;
-
-  const u = new SpeechSynthesisUtterance(lastAIReply);
+function speak(text) {
+  const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
   u.rate = 0.95;
   u.pitch = 1.0;
@@ -147,7 +137,7 @@ listenBtn.onclick = () => {
 
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
-};
+}
 
 /* =====================================================
    IA — via Cloudflare Worker
@@ -156,7 +146,7 @@ listenBtn.onclick = () => {
 async function askAI(text) {
   const prompt = `
 You are a VERY STRICT English teacher.
-No praise. Be direct and objective.
+No praise.
 
 Student level: ${stats.level}
 User said: "${text}"
@@ -229,7 +219,6 @@ function highlightDifferences(correct, spoken) {
   return c.map((w, i) => {
     const score = similarity(w, s[i] || "");
     if (score >= 0.85) return `<span>${w}</span>`;
-
     return `<span class="text-red-400 underline bad">${w}</span>`;
   }).join(" ");
 }
@@ -268,17 +257,9 @@ function updateUI() {
   levelText.textContent =
     `Level: ${stats.level} | Hits: ${stats.hits} | Errors: ${stats.errors}`;
 
-  strictBtn.textContent = strictMode ? "😈 Strict ON" : "🙂 Strict OFF";
-
   historyDiv.innerHTML =
     "<strong>📈 Progress</strong><br>" +
     history.slice(-5).map(
       h => `• ${h.date} — ${h.level} — errors: ${h.errors}`
     ).join("<br>");
 }
-
-strictBtn.onclick = () => {
-  strictMode = !strictMode;
-  localStorage.setItem("strictMode", strictMode);
-  updateUI();
-};
