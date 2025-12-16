@@ -8,50 +8,24 @@
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class'
-    }
+    tailwind.config = { darkMode: 'class' }
   </script>
 </head>
 
 <body class="dark bg-gray-900 text-gray-100 min-h-screen p-4">
 
-  <h1 class="text-xl font-bold mb-2">🧠 AI English Trainer</h1>
-  <p id="level" class="mb-4 text-sm text-gray-400"></p>
+  <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
+  <p id="levelText" class="text-sm text-gray-400 mb-3"></p>
 
-  <div id="chat" class="bg-gray-800 rounded p-3 h-64 overflow-y-auto mb-3"></div>
-
-  <div class="flex gap-2 mb-3">
-    <input
-      id="textInput"
-      class="flex-1 p-2 rounded bg-gray-700 text-white"
-      placeholder="Type in English (Safari uses typing)"
-    />
-    <button
-      id="sendBtn"
-      class="px-3 py-2 bg-blue-600 rounded"
-    >
-      Send
-    </button>
-  </div>
+  <div id="englishText" class="bg-gray-800 p-3 rounded mb-2"></div>
+  <div id="feedback" class="text-sm mb-2"></div>
 
   <div class="flex gap-2 mb-3">
-    <button
-      id="listenBtn"
-      class="px-3 py-2 bg-green-600 rounded"
-      disabled
-    >
-      🔊 Listen
-    </button>
-    <button
-      id="modeBtn"
-      class="px-3 py-2 bg-red-600 rounded"
-    >
-      😈 Strict OFF
-    </button>
+    <button id="micBtn" class="px-3 py-2 bg-blue-600 rounded">🎤 Speak</button>
+    <button id="strictBtn" class="px-3 py-2 bg-red-600 rounded">😈 Strict OFF</button>
   </div>
 
-  <div id="history" class="text-sm text-gray-400"></div>
+  <div id="history" class="text-xs text-gray-400 mt-3"></div>
 
   <script src="app.js"></script>
 </body>
