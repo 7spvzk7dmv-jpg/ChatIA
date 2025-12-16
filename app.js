@@ -1,109 +1,64 @@
 const chat = document.getElementById("chat");
-const speakBtn = document.getElementById("speakBtn");
 const levelEl = document.getElementById("level");
 const textInput = document.getElementById("textInput");
 const sendBtn = document.getElementById("sendBtn");
+const listenBtn = document.getElementById("listenBtn");
 const modeBtn = document.getElementById("modeBtn");
 const historyDiv = document.getElementById("history");
 
-// ================= CONFIG =================
-const HF_TOKEN = "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";
-const HF_MODEL =
-  "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
-// ==========================================
+// ===== CONFIG =====
+const HF_TOKEN = "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";
+const HF_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
 
+// ===== STATE =====
 let level = localStorage.getItem("level") || "A1";
-let strictMode = JSON.parse(localStorage.getItem("strictMode")) || false;
+let strict = JSON.parse(localStorage.getItem("strict")) || false;
 let history = JSON.parse(localStorage.getItem("history")) || [];
+let lastReply = "";
 
 levelEl.textContent = `Level: ${level}`;
-modeBtn.textContent = strictMode ? "😈 Strict mode: ON" : "🙂 Strict mode: OFF";
+modeBtn.textContent = strict ? "😈 Strict ON" : "🙂 Strict OFF";
 
-// ===== Detect Safari =====
-const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-// ===== Speech Recognition =====
-let recognition = null;
-if (!isSafari && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
-  recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang = "en-US";
-} else {
-  speakBtn.disabled = true;
-  speakBtn.textContent = "🎤 Voice not supported on Safari";
-}
-
-// ===== UI helpers =====
-function addUserMessage(text) {
-  const p = document.createElement("p");
-  p.innerHTML = `<strong>You:</strong> ${text}`;
-  p.className = "user";
-  chat.appendChild(p);
-}
-
-function addBlock(title, html, cls) {
+// ===== UI =====
+function add(html) {
   const div = document.createElement("div");
-  div.className = "block " + cls;
-  div.innerHTML = `<strong>${title}</strong><p>${html}</p>`;
+  div.className = "mb-2";
+  div.innerHTML = html;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
-// ===== TTS =====
-function speak(text) {
-  const u = new SpeechSynthesisUtterance(text);
+// ===== TTS (ONLY on click) =====
+listenBtn.onclick = () => {
+  if (!lastReply) return;
+  const u = new SpeechSynthesisUtterance(lastReply);
   u.lang = "en-US";
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
-}
+};
 
-// ===== Token diff (heurística de pronúncia) =====
-function highlightErrors(original, corrected) {
-  const o = original.toLowerCase().split(/\s+/);
-  const c = corrected.toLowerCase().split(/\s+/);
+// ===== AI =====
+async function askAI(text) {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 20000);
 
-  return c
-    .map(w => o.includes(w) ? w : `<span class="bad">${w}</span>`)
-    .join(" ");
-}
-
-// ===== Parse AI =====
-function parseAI(text) {
-  const get = (l) =>
-    (text.match(new RegExp(l + ":([\\s\\S]*?)(?=\\n[A-Z]|$)", "i")) || [,""])[1].trim();
-
-  return {
-    correction: get("Correction"),
-    pronunciation: get("Pronunciation"),
-    reply: get("Reply"),
-    level: get("Level")
-  };
-}
-
-// ===== AI Call =====
-async function askAI(userText) {
   const prompt = `
 You are a VERY STRICT English teacher.
-No praise. Be direct and critical.
+No praise.
 
 Student level: ${level}
-Strict mode: ${strictMode}
-
-User said: "${userText}"
-
-1. Rewrite the sentence correctly.
-2. Explicitly list mistakes.
-3. Be concise.
-4. Estimate CEFR level (A1-C1).
+User said: "${text}"
 
 Format:
 Correction:
-Pronunciation:
+Mistakes:
 Reply:
 Level:
 `;
 
-  const res = await fetch(HF_MODEL, {
+  const res = await fetch(HF_URL, {
     method: "POST",
+    signal: controller.signal,
     headers: {
       "Authorization": "Bearer " + HF_TOKEN,
       "Content-Type": "application/json"
@@ -111,79 +66,68 @@ Level:
     body: JSON.stringify({ inputs: prompt })
   });
 
-  if (!res.ok) throw new Error();
+  if (!res.ok) throw new Error("AI failed");
   const data = await res.json();
   return data[0].generated_text;
 }
 
-// ===== History =====
-function saveHistory(entry) {
-  history.push(entry);
+// ===== Parse =====
+function parse(label, text) {
+  const r = new RegExp(label + ":([\\s\\S]*?)(?=\\n[A-Z]|$)", "i");
+  return (text.match(r) || [,""])[1].trim();
+}
+
+// ===== HISTORY =====
+function save(level, errors) {
+  history.push({
+    date: new Date().toLocaleDateString(),
+    level,
+    errors
+  });
   localStorage.setItem("history", JSON.stringify(history));
-  renderHistory();
+  historyDiv.innerHTML = history.slice(-5)
+    .map(h => `📅 ${h.date} — ${h.level} — errors: ${h.errors}`)
+    .join("<br>");
 }
 
-function renderHistory() {
-  historyDiv.innerHTML = "<h3>📈 Progress</h3>" +
-    history.slice(-5).map(h =>
-      `<p>${h.date} — Level ${h.level} — Errors: ${h.errors}</p>`
-    ).join("");
-}
-
-// ===== Handle input =====
-async function handleUserInput(text) {
+// ===== SEND =====
+sendBtn.onclick = async () => {
+  const text = textInput.value.trim();
   if (!text) return;
+  textInput.value = "";
 
-  addUserMessage(text);
+  add(`<div class="text-blue-400">You: ${text}</div>`);
+  listenBtn.disabled = true;
 
   try {
     const raw = await askAI(text);
-    const ai = parseAI(raw);
 
-    const highlighted = highlightErrors(text, ai.correction);
-    const errors = (highlighted.match(/bad/g) || []).length;
+    const correction = parse("Correction", raw);
+    const mistakes = parse("Mistakes", raw);
+    const reply = parse("Reply", raw);
+    const newLevel = parse("Level", raw);
 
-    addBlock("✏️ Correct sentence", highlighted, "correction");
-    addBlock("🗣️ Pronunciation issues", ai.pronunciation, "pronunciation");
-    addBlock("💬 Reply", ai.reply, "reply");
-    speak(ai.reply);
+    lastReply = reply;
+    listenBtn.disabled = false;
 
-    if (ai.level) {
-      const trend = ai.level > level ? "↑" : ai.level < level ? "↓" : "→";
-      level = ai.level;
-      levelEl.textContent = `Level: ${level}`;
+    add(`<div class="border-l-4 border-blue-500 pl-2">✏️ ${correction}</div>`);
+    add(`<div class="border-l-4 border-yellow-500 pl-2">⚠️ ${mistakes}</div>`);
+    add(`<div class="border-l-4 border-green-500 pl-2">💬 ${reply}</div>`);
+
+    if (newLevel) {
+      level = newLevel;
       localStorage.setItem("level", level);
-
-      saveHistory({
-        date: new Date().toLocaleDateString(),
-        level,
-        errors,
-        trend
-      });
-
-      addBlock("📊 Level update", `${trend} ${level}`, "level");
+      levelEl.textContent = `Level: ${level}`;
+      save(level, mistakes ? mistakes.split(",").length : 0);
     }
   } catch {
-    addBlock("⚠️ Error", "AI unavailable.", "error");
+    add(`<div class="text-red-500">⚠️ AI unavailable (Safari limitation)</div>`);
   }
-}
-
-// ===== Events =====
-if (recognition) {
-  recognition.onresult = e => handleUserInput(e.results[0][0].transcript);
-  speakBtn.onclick = () => recognition.start();
-}
-
-sendBtn.onclick = () => {
-  const t = textInput.value.trim();
-  textInput.value = "";
-  handleUserInput(t);
 };
 
+// ===== STRICT MODE =====
 modeBtn.onclick = () => {
-  strictMode = !strictMode;
-  localStorage.setItem("strictMode", strictMode);
-  modeBtn.textContent = strictMode ? "😈 Strict mode: ON" : "🙂 Strict mode: OFF";
+  strict = !strict;
+  localStorage.setItem("strict", strict);
+  modeBtn.textContent = strict ? "😈 Strict ON" : "🙂 Strict OFF";
 };
-
-renderHistory();
