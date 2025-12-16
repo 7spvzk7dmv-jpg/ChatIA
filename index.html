@@ -1,24 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>AI English Trainer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8" />
+  <title>AI English Trainer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-gray-100 p-4">
 
-<h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
-<p id="levelText" class="text-sm text-gray-400 mb-2"></p>
+  <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
+  <p id="levelText" class="text-sm text-gray-400 mb-2"></p>
 
-<div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto"></div>
-<div id="feedback" class="text-sm mb-3"></div>
+  <!-- Chat -->
+  <div
+    id="chat"
+    class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto text-sm"
+  ></div>
 
-<div class="flex gap-2 mb-3">
-  <button id="speakBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
-  <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
-</div>
+  <div id="feedback" class="text-xs text-gray-400 mb-3"></div>
+
+  <!-- Controls -->
+  <div class="flex gap-2 mb-3">
+    <button
+      id="speakBtn"
+      class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded"
+    >
+      🎤 Speak
+    </button>
+
+    <button
+      id="resetBtn"
+      class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded"
+    >
+      ♻️ Reset
+    </button>
+  </div>
 
 <script>
 /* ================= CONFIG ================= */
@@ -26,7 +43,7 @@ const WORKER_URL = "https://english-ai.xvbw97yrx9.workers.dev";
 const LEVELS = ["A1","A2","B1","B2","C1"];
 
 /* ================= STATE ================= */
-let state = JSON.parse(localStorage.getItem("state")) || {
+let state = JSON.parse(localStorage.getItem("aiTrainerState")) || {
   level: "A1"
 };
 
@@ -42,13 +59,13 @@ const resetBtn = document.getElementById("resetBtn");
 /* ================= INIT ================= */
 updateUI();
 
-/* ================= STT (Safari) ================= */
+/* ================= STT (Safari-safe) ================= */
 speakBtn.onclick = () => {
   if (listening) return;
 
   const SR = window.webkitSpeechRecognition;
   if (!SR) {
-    feedback.textContent = "Speech recognition not supported.";
+    feedback.textContent = "Speech recognition not supported on this browser.";
     return;
   }
 
@@ -62,7 +79,7 @@ speakBtn.onclick = () => {
 
   rec.onresult = e => {
     listening = false;
-    const text = e.results[0][0].transcript;
+    const text = e.results[0][0].transcript.trim();
     addBubble("You", text);
     askAI(text);
   };
@@ -75,19 +92,21 @@ speakBtn.onclick = () => {
   rec.start();
 };
 
-/* ================= IA FLOW ================= */
+/* ================= AI ================= */
 async function askAI(userText) {
   feedback.textContent = "🤖 AI responding…";
 
   const prompt = `
-You are a strict but helpful American English teacher.
-You must guide the student to speak better English.
-Always respond in natural American English.
-Correct grammar implicitly.
-Ask a follow-up question to keep the conversation going.
-
 Student CEFR level: ${state.level}
-Student said: "${userText}"
+
+Student said:
+"${userText}"
+
+Instructions:
+- Respond in natural American English
+- Correct mistakes naturally
+- Be slightly strict but encouraging
+- Ask a follow-up question to keep the conversation going
 `;
 
   try {
@@ -97,36 +116,20 @@ Student said: "${userText}"
       body: JSON.stringify({ prompt })
     });
 
-    const rawText = await res.text();
-    let output = rawText;
+    if (!res.ok) throw new Error();
 
-    // tenta JSON, mas não exige
-    try {
-      const parsed = JSON.parse(rawText);
-      if (Array.isArray(parsed) && parsed[0]?.generated_text) {
-        output = parsed[0].generated_text;
-      } else if (parsed.generated_text) {
-        output = parsed.generated_text;
-      }
-    } catch {}
+    const data = await res.json();
+    const reply = data.reply?.trim();
 
-    // 🔑 PARSER ROBUSTO
-    let reply = extract(output, "Reply");
-    let newLevel = extract(output, "Level");
-
-    // fallback absoluto
-    if (!reply) reply = output.trim();
-    if (!newLevel || !LEVELS.includes(newLevel)) newLevel = state.level;
+    if (!reply) throw new Error();
 
     addBubble("AI", reply);
     speak(reply);
 
-    state.level = newLevel;
-    localStorage.setItem("state", JSON.stringify(state));
-    updateUI();
-
-    // conversa contínua
+    // conversa contínua (turno automático)
     setTimeout(() => speakBtn.click(), 1800);
+
+    feedback.textContent = "Your turn.";
 
   } catch {
     feedback.textContent = "AI unavailable.";
@@ -137,48 +140,43 @@ Student said: "${userText}"
 function speak(text) {
   if (!text) return;
 
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "en-US";
-  u.rate = 0.95;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "en-US";
+  utter.rate = 0.95;
 
   const voices = speechSynthesis.getVoices();
-  u.voice =
+  utter.voice =
     voices.find(v => v.name === "Samantha") ||
     voices.find(v => v.lang === "en-US") ||
     null;
 
   speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+  speechSynthesis.speak(utter);
 }
 
-/* ================= HELPERS ================= */
-function extract(text, label) {
-  const r = new RegExp(label + ":([\\s\\S]*?)(\\n|$)", "i");
-  const m = text.match(r);
-  return m ? m[1].trim() : "";
-}
-
+/* ================= UI ================= */
 function addBubble(who, text) {
   const div = document.createElement("div");
   div.className =
     who === "You"
       ? "text-blue-400 mb-1"
       : "text-green-400 mb-1";
-  div.textContent = who + ": " + text;
+  div.textContent = `${who}: ${text}`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
 function updateUI() {
-  levelText.textContent = "Level: " + state.level;
+  levelText.textContent = `Level: ${state.level}`;
   feedback.textContent = "Your turn.";
 }
 
 /* ================= RESET ================= */
 resetBtn.onclick = () => {
   if (!confirm("Reset conversation and progress?")) return;
+
   state = { level: "A1" };
-  localStorage.removeItem("state");
+  localStorage.removeItem("aiTrainerState");
   chat.innerHTML = "";
   updateUI();
 };
