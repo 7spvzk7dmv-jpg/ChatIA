@@ -1,39 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>AI English Trainer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = { darkMode: 'class' }
-  </script>
 </head>
 
-<body class="dark bg-gray-900 text-gray-100 min-h-screen p-4">
+<body class="bg-gray-900 text-gray-100 p-4">
 
-  <h1 class="text-xl font-bold mb-1">🧠 AI English Trainer</h1>
+  <h1 class="text-xl font-bold mb-2">AI English Trainer</h1>
   <p id="levelText" class="text-sm text-gray-400 mb-3"></p>
 
-  <!-- Conversa -->
-  <div id="chat" class="bg-gray-800 p-3 rounded mb-3 h-64 overflow-y-auto"></div>
-
-  <!-- Feedback -->
+  <div id="chat" class="bg-gray-800 p-3 rounded mb-3 min-h-[120px]"></div>
   <div id="feedback" class="text-sm mb-3"></div>
 
-  <!-- Controles -->
-  <div class="flex gap-2 mb-4">
-    <button id="micBtn" class="px-3 py-2 bg-blue-600 rounded">🎤 Speak</button>
-    <button id="toggleModeBtn" class="px-3 py-2 bg-green-600 rounded">
-      🔁 Continuous: OFF
-    </button>
+  <div class="flex gap-2 mb-3">
+    <button id="micBtn" class="bg-blue-600 px-3 py-2 rounded">🎤 Speak</button>
+    <button id="askBtn" class="bg-purple-600 px-3 py-2 rounded">🤖 Ask AI</button>
+    <button id="resetBtn" class="bg-red-600 px-3 py-2 rounded">♻️ Reset</button>
   </div>
 
-  <!-- Gráfico simples -->
-  <canvas id="progressChart" class="mb-4"></canvas>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
