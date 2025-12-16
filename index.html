@@ -54,7 +54,7 @@ const chat = document.getElementById("chat");
 const levelText = document.getElementById("levelText");
 const feedback = document.getElementById("feedback");
 
-/* ================= VOZ NATURAL (IGUAL AO SISTEMA BOM) ================= */
+/* ================= VOZ NATURAL (Safari correto) ================= */
 let selectedVoice = null;
 
 function initVoices() {
@@ -63,7 +63,6 @@ function initVoices() {
   function pickVoice() {
     const voices = speechSynthesis.getVoices();
     if (!voices.length) return;
-
     selectedVoice =
       voices.find(v => preferred.includes(v.name) && v.lang.startsWith('en')) ||
       voices.find(v => v.lang === 'en-US') ||
@@ -142,14 +141,30 @@ function attachWordListeners() {
   });
 }
 
-/* ================= AI (ROBUSTO, NÃO QUEBRA) ================= */
+/* ================= AI (CONVERSACIONAL, NÃO CHATO) ================= */
 async function askAI(text) {
   feedback.textContent = "🤖 Thinking…";
 
   const prompt = `
-Return a JSON object with:
-correction, pronunciation, reply, cefr (0-1).
+You are a conversational American English partner.
 
+Rules:
+- Speak naturally.
+- Only correct the student if there is a real mistake.
+- If correcting, be brief.
+- Keep the conversation flowing.
+- Ask ONE short follow-up question.
+
+Return a JSON object:
+{
+ "corrected": true|false,
+ "correction": "...",
+ "pronunciation": "...",
+ "reply": "...",
+ "cefr": 0-1
+}
+
+Student level: ${state.level}
 Student said: "${text}"
 `;
 
@@ -163,15 +178,14 @@ Student said: "${text}"
     const data = await res.json();
     let raw = data.reply || "";
 
-    // Fallback seguro
     let parsed = {
-      correction: raw,
-      pronunciation: "Work on clarity and stress.",
+      corrected: false,
+      correction: "",
+      pronunciation: "",
       reply: raw,
       cefr: 0.5
     };
 
-    // Extração tolerante de JSON
     try {
       const start = raw.indexOf("{");
       const end = raw.lastIndexOf("}");
@@ -180,12 +194,17 @@ Student said: "${text}"
       }
     } catch {}
 
-    document.getElementById("correction").innerHTML =
-      "<b>Correction:</b> " + highlight(parsed.correction, lastUserSpeech);
-    attachWordListeners();
+    if (parsed.corrected) {
+      document.getElementById("correction").innerHTML =
+        "<b>Correction:</b> " + highlight(parsed.correction, lastUserSpeech);
+      attachWordListeners();
 
-    document.getElementById("pronunciation").innerHTML =
-      "<b>Pronunciation:</b> " + parsed.pronunciation;
+      document.getElementById("pronunciation").innerHTML =
+        "<b>Pronunciation:</b> " + parsed.pronunciation;
+    } else {
+      document.getElementById("correction").innerHTML = "";
+      document.getElementById("pronunciation").innerHTML = "";
+    }
 
     document.getElementById("reply").innerHTML =
       "<b>Reply:</b> " + parsed.reply;
